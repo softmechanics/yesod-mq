@@ -8,22 +8,18 @@ module Yesod.Mq.Widget where
 import Yesod
 import Yesod.Mq.Core
 
+-- | Add code to run on $(document).ready()  -- this should be somewhere else
+documentReady :: Julius (Route master) -> GWidget sub master ()
+documentReady f = addJulius [$julius| $(document).ready(^f^); |]
+
 -- | Initialize message queue
 initMq :: (YesodSubRoute Mq master) => GWidget sub master ()
-initMq = do
-  addScript $ subRoute MqJsR
-  addJulius [$julius|
-     $(document).ready(function () { 
-     $MQ("onLoad", {}); 
-   });
-  |]
+initMq = addScript $ subRoute MqJsR
 
 -- | Subscribe to queues matching pattern.  Message available in javascript object "msg"
 mql :: String -> Julius (Route master) -> GWidget sub master ()
 mql q hndl = addJulius [$julius|
-    $MQL(%q'%, function (msg) {
-      ^hndl^
-    });
+    $MQL(%q'%, function (msg) { ^hndl^ }); 
   |]
   where q' = if regex q then q else '"' : q ++ ['"']
         regex s = head s == '/' && last s == '/'
@@ -31,10 +27,6 @@ mql q hndl = addJulius [$julius|
 -- | Publish message on queue
 mq :: String -> Julius (Route master) -> GWidget sub master ()
 mq q msg = addJulius [$julius| $MQ("%q%", ^msg^); |]
-
--- | Add code to run on $(document).ready()
-onLoad :: Julius (Route master) -> GWidget sub master ()
-onLoad = mql "onLoad"
 
 -- | A log window widget, logs Mq messages
 yuiLogger :: GWidget sub master ()
@@ -51,21 +43,13 @@ yuiLogger = do
   -- Source file --
   addScriptRemote "http://yui.yahooapis.com/2.8.2/build/logger/logger-min.js"
 
-  onLoad [$julius|
+  documentReady [$julius|
     var container = document.body.appendChild(document.createElement("div"));
     container.setAttribute("class", "yui-skin-sam");
     var logDiv = container.appendChild(document.createElement("div"));
     var logReader = new YAHOO.widget.LogReader(logDiv);
   |]
 
-  mql "log" [$julius| YAHOO.log(msg.payload.msg, msg.payload.level); |]
-
 -- | configure log level for queues matching pattern
 yuiLog :: String -> String -> GWidget sub master ()
-yuiLog pattern level = 
-    mql pattern [$julius|
-if (msg.name != "log") {
-  // prevent feedback loop
-  $MQ("log", {msg:msg.toSource(), level:"%level%"});
-}
-|]
+yuiLog pattern level = mql pattern [$julius| YAHOO.log(msg.payload.msg, msg.payload.level); |]
